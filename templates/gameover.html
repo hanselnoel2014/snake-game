@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Game Over</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: #0f1f13;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Inter', sans-serif;
+      color: #a8c5b0;
+    }
+
+    .card {
+      background: #162b1c;
+      border: 1.5px solid #2e5e3a;
+      border-radius: 24px;
+      padding: 52px 60px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 28px;
+      box-shadow: 0 12px 48px rgba(0,0,0,0.5);
+      text-align: center;
+      min-width: 300px;
+    }
+
+    .emoji {
+      font-size: 3.5rem;
+      line-height: 1;
+    }
+
+    h1 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      color: #6abf8a;
+      letter-spacing: 0.5px;
+    }
+
+    .score-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .score-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #3a5e45;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+    }
+
+    .score-value {
+      font-size: 3.2rem;
+      font-weight: 700;
+      color: #6abf8a;
+      line-height: 1.1;
+    }
+
+    .play-again-btn {
+      display: inline-block;
+      padding: 13px 40px;
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+      color: #0f1f13;
+      background: #6abf8a;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+      box-shadow: 0 4px 16px rgba(106, 191, 138, 0.25);
+    }
+
+    .play-again-btn:hover {
+      background: #52a872;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(106, 191, 138, 0.35);
+    }
+
+    .play-again-btn:active {
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="emoji">🐍</div>
+    <h1>Game Over</h1>
+    <div class="score-section">
+      <p class="score-label">Your Score</p>
+      <p class="score-value" id="final-score">0</p>
+    </div>
+    <a href="/" class="play-again-btn">Play Again</a>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const score = params.get('score');
+    if (score !== null) {
+      document.getElementById('final-score').textContent = score;
+    }
+  </script>
+</body>
+</html>

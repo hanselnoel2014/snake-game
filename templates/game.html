@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Snake</title>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0f1f13;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Nunito', sans-serif;
+      color: #a8c5b0;
+    }
+
+    header { margin-bottom: 16px; }
+
+    header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #6abf8a;
+      letter-spacing: 1px;
+    }
+
+    .score-pill {
+      background: #162b1c;
+      border: 1.5px solid #2e5e3a;
+      border-radius: 999px;
+      padding: 5px 22px;
+      font-size: 0.95rem;
+      color: #7aaa8a;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    .score-pill span { font-weight: 700; color: #6abf8a; }
+
+    #grid-wrapper {
+      border-radius: 18px;
+      padding: 8px;
+      background: #0a1a0d;
+      box-shadow: 0 12px 48px rgba(0,0,0,0.6), 0 0 0 1px #1a3a22;
+      /* SVG overlay needs position context */
+      position: relative;
+    }
+
+    /* The grid sits inside; the SVG is absolutely layered on top */
+    #grid-container {
+      position: relative;
+      border-radius: 12px;
+      overflow: hidden;
+      width: 480px;   /* 12 * 40 */
+      height: 480px;
+    }
+
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(12, 40px);
+      grid-template-rows: repeat(12, 40px);
+      width: 480px;
+      height: 480px;
+    }
+
+    .cell {
+      width: 40px;
+      height: 40px;
+      background-color: #1e4d2b;
+    }
+
+    .cell.grass-dark { background-color: #173d22; }
+
+    /* Food emoji */
+    .cell.food {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    /* SVG canvas drawn over the grid */
+    #snake-svg {
+      position: absolute;
+      top: 0; left: 0;
+      width: 480px;
+      height: 480px;
+      pointer-events: none;
+      overflow: visible;
+    }
+
+    footer {
+      margin-top: 14px;
+      font-size: 0.78rem;
+      color: #3a5e45;
+    }
+  </style>
+</head>
+<body>
+
+  <header><h1>🌿 Snake</h1></header>
+  <div class="score-pill">Score: <span id="score">0</span></div>
+
+  <div id="grid-wrapper">
+    <div id="grid-container">
+      <div id="grid"></div>
+      <svg id="snake-svg" viewBox="0 0 480 480" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+  </div>
+
+  <footer>Arrow keys or WASD to move</footer>
+
+  <script>
+    const GRID_SIZE = 12;
+    const CELL = 40;          // px per cell
+    const TICK_MS = 190;
+    const BODY_R = 10;        // half-width of snake body stroke
+    const HEAD_COLOR  = '#1a6fa8';
+    const BODY_COLOR  = '#1a5f8a';
+
+    // Build grass grid
+    const gridEl = document.getElementById('grid');
+    const cells = [];
+    for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
+      const cell = document.createElement('div');
+      cell.classList.add('cell');
+      const row = Math.floor(i / GRID_SIZE);
+      const col = i % GRID_SIZE;
+      if ((row + col) % 2 === 1) cell.classList.add('grass-dark');
+      gridEl.appendChild(cell);
+      cells.push(cell);
+    }
+
+    const svgEl = document.getElementById('snake-svg');
+    const NS = 'http://www.w3.org/2000/svg';
+
+    function idx(r, c) { return r * GRID_SIZE + c; }
+
+    // Centre pixel of a grid cell
+    function cx(c) { return c * CELL + CELL / 2; }
+    function cy(r) { return r * CELL + CELL / 2; }
+
+    let snake, direction, nextDirection, food, score, intervalId;
+
+    function randomFood(snake) {
+      const occupied = new Set(snake.map(s => idx(s.r, s.c)));
+      let pos;
+      do {
+        pos = { r: Math.floor(Math.random() * GRID_SIZE), c: Math.floor(Math.random() * GRID_SIZE) };
+      } while (occupied.has(idx(pos.r, pos.c)));
+      return pos;
+    }
+
+    function initGame() {
+      const midR = Math.floor(GRID_SIZE / 2);
+      const midC = Math.floor(GRID_SIZE / 2);
+      snake = [
+        { r: midR, c: midC },
+        { r: midR, c: midC - 1 },
+        { r: midR, c: midC - 2 },
+      ];
+      direction     = { r: 0, c: 1 };
+      nextDirection = { r: 0, c: 1 };
+      score = 0;
+      document.getElementById('score').textContent = 0;
+      food = randomFood(snake);
+      render();
+    }
+
+    // ─── SVG snake drawing ──────────────────────────────────────────────────
+
+    // Build a smooth rounded polyline path through snake centres.
+    // Uses quadratic bezier curves at every bend so turns look organic.
+    function buildBodyPath(segs) {
+      if (segs.length === 0) return '';
+      if (segs.length === 1) {
+        // just a circle (handled separately)
+        return '';
+      }
+
+      // Points array
+      const pts = segs.map(s => ({ x: cx(s.c), y: cy(s.r) }));
+
+      let d = `M ${pts[0].x} ${pts[0].y}`;
+      for (let i = 1; i < pts.length; i++) {
+        d += ` L ${pts[i].x} ${pts[i].y}`;
+      }
+      return d;
+    }
+
+    // Draw the pointy tail tip: a small triangle pointing away from body
+    function tailTipPath(tail, beforeTail) {
+      const dr = tail.r - beforeTail.r;
+      const dc = tail.c - beforeTail.c;
+      const tx = cx(tail.c);
+      const ty = cy(tail.r);
+      const tipX = tx + dc * CELL * 0.48;
+      const tipY = ty + dr * CELL * 0.48;
+      // perpendicular
+      const px = dr * BODY_R * 0.6;
+      const py = dc * BODY_R * 0.6;
+      return `M ${tx - px} ${ty + py} Q ${tipX} ${tipY} ${tx + px} ${ty - py}`;
+    }
+
+    function renderSnakeSVG() {
+      // Clear previous snake elements
+      while (svgEl.firstChild) svgEl.removeChild(svgEl.firstChild);
+
+      if (snake.length === 0) return;
+
+      // ── Body stroke (continuous rounded line) ──────────────────────
+      const bodyPath = document.createElementNS(NS, 'path');
+      const pts = snake.map(s => ({ x: cx(s.c), y: cy(s.r) }));
+
+      // Build smooth path with rounded joins
+      let d = `M ${pts[0].x} ${pts[0].y}`;
+      for (let i = 1; i < pts.length; i++) {
+        d += ` L ${pts[i].x} ${pts[i].y}`;
+      }
+
+      bodyPath.setAttribute('d', d);
+      bodyPath.setAttribute('fill', 'none');
+      bodyPath.setAttribute('stroke', BODY_COLOR);
+      bodyPath.setAttribute('stroke-width', String(BODY_R * 2));
+      bodyPath.setAttribute('stroke-linecap', 'round');
+      bodyPath.setAttribute('stroke-linejoin', 'round');
+      svgEl.appendChild(bodyPath);
+
+      // ── Head circle (drawn on top of body stroke) ──────────────────
+      const head = snake[0];
+      const hx = cx(head.c);
+      const hy = cy(head.r);
+
+      const headCircle = document.createElementNS(NS, 'circle');
+      headCircle.setAttribute('cx', String(hx));
+      headCircle.setAttribute('cy', String(hy));
+      headCircle.setAttribute('r',  String(BODY_R + 2));
+      headCircle.setAttribute('fill', HEAD_COLOR);
+      svgEl.appendChild(headCircle);
+
+      // ── Eyes ───────────────────────────────────────────────────────
+      const dir = direction;
+      // Eye offset: perpendicular to direction, placed towards the front
+      const fwd = { x: dir.c, y: dir.r };
+      const perp = { x: -dir.r, y: dir.c };
+
+      const eyeForward  = 3;
+      const eyeSide     = 5;
+      const eyeRadius   = 3;
+      const pupilRadius = 1.6;
+
+      for (const side of [1, -1]) {
+        const ex = hx + fwd.x * eyeForward + perp.x * side * eyeSide;
+        const ey = hy + fwd.y * eyeForward + perp.y * side * eyeSide;
+
+        const white = document.createElementNS(NS, 'circle');
+        white.setAttribute('cx', String(ex));
+        white.setAttribute('cy', String(ey));
+        white.setAttribute('r',  String(eyeRadius));
+        white.setAttribute('fill', 'white');
+        svgEl.appendChild(white);
+
+        const pupil = document.createElementNS(NS, 'circle');
+        pupil.setAttribute('cx', String(ex + fwd.x * 1));
+        pupil.setAttribute('cy', String(ey + fwd.y * 1));
+        pupil.setAttribute('r',  String(pupilRadius));
+        pupil.setAttribute('fill', '#0d0d0d');
+        svgEl.appendChild(pupil);
+
+        // Specular highlight
+        const spec = document.createElementNS(NS, 'circle');
+        spec.setAttribute('cx', String(ex + fwd.x * 1.5 + perp.x * side * (-0.5)));
+        spec.setAttribute('cy', String(ey + fwd.y * 1.5 + perp.y * side * (-0.5)));
+        spec.setAttribute('r',  '0.8');
+        spec.setAttribute('fill', 'white');
+        svgEl.appendChild(spec);
+      }
+
+      // ── Tongue ─────────────────────────────────────────────────────
+      const tongueBase = 16;
+      const tongueFork = 22;
+      const tbx = hx + fwd.x * tongueBase;
+      const tby = hy + fwd.y * tongueBase;
+      const tfx = hx + fwd.x * tongueFork;
+      const tfy = hy + fwd.y * tongueFork;
+      const spread = 5;
+
+      // Stem
+      const stem = document.createElementNS(NS, 'line');
+      stem.setAttribute('x1', String(hx + fwd.x * (BODY_R + 2)));
+      stem.setAttribute('y1', String(hy + fwd.y * (BODY_R + 2)));
+      stem.setAttribute('x2', String(tbx));
+      stem.setAttribute('y2', String(tby));
+      stem.setAttribute('stroke', '#e02020');
+      stem.setAttribute('stroke-width', '2.5');
+      stem.setAttribute('stroke-linecap', 'round');
+      svgEl.appendChild(stem);
+
+      // Fork left
+      const forkA = document.createElementNS(NS, 'line');
+      forkA.setAttribute('x1', String(tbx));
+      forkA.setAttribute('y1', String(tby));
+      forkA.setAttribute('x2', String(tfx + perp.x * spread));
+      forkA.setAttribute('y2', String(tfy + perp.y * spread));
+      forkA.setAttribute('stroke', '#e02020');
+      forkA.setAttribute('stroke-width', '2');
+      forkA.setAttribute('stroke-linecap', 'round');
+      svgEl.appendChild(forkA);
+
+      // Fork right
+      const forkB = document.createElementNS(NS, 'line');
+      forkB.setAttribute('x1', String(tbx));
+      forkB.setAttribute('y1', String(tby));
+      forkB.setAttribute('x2', String(tfx - perp.x * spread));
+      forkB.setAttribute('y2', String(tfy - perp.y * spread));
+      forkB.setAttribute('stroke', '#e02020');
+      forkB.setAttribute('stroke-width', '2');
+      forkB.setAttribute('stroke-linecap', 'round');
+      svgEl.appendChild(forkB);
+    }
+
+    // ─── Grid cell render (food only, snake is SVG) ─────────────────────────
+
+    function render() {
+      // Reset all cells
+      cells.forEach((cell, i) => {
+        const row = Math.floor(i / GRID_SIZE);
+        const col = i % GRID_SIZE;
+        cell.className = 'cell' + ((row + col) % 2 === 1 ? ' grass-dark' : '');
+        cell.textContent = '';
+      });
+
+      // Food
+      const foodCell = cells[idx(food.r, food.c)];
+      foodCell.classList.add('food');
+      foodCell.textContent = '🍎';
+
+      // Snake via SVG
+      renderSnakeSVG();
+    }
+
+    // ─── Game loop ──────────────────────────────────────────────────────────
+
+    function tick() {
+      direction = nextDirection;
+      const head    = snake[0];
+      const newHead = { r: head.r + direction.r, c: head.c + direction.c };
+
+      if (newHead.r < 0 || newHead.r >= GRID_SIZE || newHead.c < 0 || newHead.c >= GRID_SIZE) {
+        clearInterval(intervalId);
+        window.location.href = '/gameover?score=' + score;
+        return;
+      }
+
+      for (const seg of snake) {
+        if (seg.r === newHead.r && seg.c === newHead.c) {
+          clearInterval(intervalId);
+          window.location.href = '/gameover?score=' + score;
+          return;
+        }
+      }
+
+      snake.unshift(newHead);
+
+      if (newHead.r === food.r && newHead.c === food.c) {
+        score++;
+        document.getElementById('score').textContent = score;
+        food = randomFood(snake);
+      } else {
+        snake.pop();
+      }
+
+      render();
+    }
+
+    document.addEventListener('keydown', (e) => {
+      switch (e.key) {
+        case 'ArrowUp':    case 'w': case 'W': if (direction.r !== 1)  nextDirection = { r: -1, c: 0 }; break;
+        case 'ArrowDown':  case 's': case 'S': if (direction.r !== -1) nextDirection = { r: 1,  c: 0 }; break;
+        case 'ArrowLeft':  case 'a': case 'A': if (direction.c !== 1)  nextDirection = { r: 0, c: -1 }; break;
+        case 'ArrowRight': case 'd': case 'D': if (direction.c !== -1) nextDirection = { r: 0, c: 1  }; break;
+      }
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault();
+    });
+
+    initGame();
+    intervalId = setInterval(tick, TICK_MS);
+  </script>
+</body>
+</html>
